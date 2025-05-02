@@ -5,6 +5,9 @@ from fastapi.responses import StreamingResponse
 import asyncio
 from typing import AsyncGenerator
 
+# Import routers
+from app.api.endpoints import chat
+
 # Initialize the FastAPI application with metadata
 app = FastAPI(
     title="TripHelix API",  # API title for documentation
@@ -21,6 +24,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
+
+# Include routers
+app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 
 # Root endpoint - serves as a welcome message
 @app.get("/")
