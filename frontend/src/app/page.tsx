@@ -59,13 +59,21 @@ export default function Home() {
         const { value, done } = await reader.read();
         if (done) break;
         
-        // const chunk = decoder.decode(value);
-        // fullResponse += chunk;
-        // setCurrentStream(fullResponse);
+        const chunk = decoder.decode(value);
+        if (chunk) {
+          const pieces = chunk.split('\n').filter(Boolean);
+          if (pieces.length) {
+            fullResponse += pieces.at(-1)!;           // accumulate
+            setCurrentStream(fullResponse);           // show full so far
+          }
+        }
       }
 
       // Once streaming is complete, add the full message to the messages array
-      setMessages(prev => [...prev, { role: 'assistant', content: fullResponse }]);
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: fullResponse }
+      ]);
       setCurrentStream('');
     } catch (error) {
       console.error('Error:', error);
