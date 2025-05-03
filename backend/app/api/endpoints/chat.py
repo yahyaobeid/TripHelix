@@ -1,9 +1,3 @@
-"""
-Chat API endpoints for the TripHelix application.
-This module handles the chat functionality, including streaming responses from the AI model.
-"""
-
-# Import necessary FastAPI components and utilities
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -11,56 +5,57 @@ from typing import Optional, List, Dict
 from openai import OpenAI
 from app.core.ai_config import ai_config
 
-# Initialize the router for chat endpoints
 router = APIRouter()
-
-# Initialize the OpenAI client with the API key from configuration
 client = OpenAI(api_key=ai_config.OPENAI_API_KEY)
 
-# In-memory storage for chat history, organized by session ID
-# This is a simple implementation - in production, consider using a database
 chat_history: Dict[str, List[Dict[str, str]]] = {}
 
 class ChatRequest(BaseModel):
-    """
-    Pydantic model for chat request validation.
-    
-    Attributes:
-        message (str): The user's message to be processed by the AI
-        session_id (Optional[str]): Unique identifier for the chat session
-    """
     message: str
     session_id: Optional[str] = None
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
-    """
-    Endpoint for streaming chat responses.
-    This endpoint processes user messages and streams the AI's response in real-time.
-    
-    Args:
-        request (ChatRequest): The chat request containing the message and optional session ID
-        
-    Returns:
-        StreamingResponse: A response that streams the AI's response token by token
-        
-    Raises:
-        HTTPException: If there's an error processing the request
-    """
     try:
-        # Use provided session ID or default to "default_session"
         session_id = request.session_id or "default_session"
-        
-        # Initialize chat history for new sessions
         if session_id not in chat_history:
             chat_history[session_id] = [
-                {"role": "system", "content": "You are a helpful AI assistant."}
+                {"role": "system", "content": """You are **SiteSherpa**, a travel‑planning assistant whose SOLE purpose is to collect eight specific pieces of information and then produce an itinerary.  
+            Until all eight items are captured, you **MUST NOT** provide facts, tips, or commentary about destinations.
+
+            ╭─────────────────────────── CORE DIRECTIVES ───────────────────────────╮
+            │ 1.  **Interrogate, don’t inform.**                                   │
+            │     – Absolutely no destination facts, tips, or opinions.            │
+            │ 2.  **Follow the exact question order.** Ask only one question at a  │
+            │     time and proceed to the next item only after the user answers.    │
+            │ 3.  **Acknowledge answers with a single upbeat word** (“Great!”,      │
+            │     “Perfect!”, “Thanks!”). Nothing more.                            │
+            │ 4.  **If the user requests info before all data is gathered,** reply │
+            │     “I’ll gladly share details once we finish the checklist. [next    │
+            │     question].” Then keep going.                                      │
+            │ 5.  **Keep each reply under 20 words** (except the final itinerary).  │
+            ╰───────────────────────────────────────────────────────────────────────╯
+
+            🗒️ **Mandatory Question Sequence**
+            1. Destination?  
+            2. Travel dates?  
+            3. Travel style (luxury, budget, adventure…)?  
+            4. Accommodation preference?  
+            5. Interests / preferred activities?  
+            6. Group size?  
+            7. Special requirements or dietary needs?  
+            8. Budget range?  
+
+            ✅ **Only after capturing all eight answers**: generate a detailed itinerary that includes  
+            • Day‑by‑day plan (morning / afternoon / evening)  
+            • Suggested restaurants  
+            • Local transportation guidance  
+            • Estimated costs per item and total  
+            • Booking links/placeholders  
+            • Special notes or pro tips  """}
             ]
-        
-        # Add user message to chat history
         chat_history[session_id].append({"role": "user", "content": request.message})
 
-        # Create a streaming response from OpenAI
         response_stream = client.chat.completions.create(
             model=ai_config.OPENAI_MODEL,
             messages=chat_history[session_id],
@@ -70,13 +65,6 @@ async def chat_stream(request: ChatRequest):
         )
 
         async def event_generator():
-            """
-            Generator function that yields the AI's response token by token.
-            Also accumulates the full response for history.
-            
-            Yields:
-                str: Individual tokens from the AI's response
-            """
             full_reply = ""
             for chunk in response_stream:
                 if chunk.choices[0].delta.content is not None:
@@ -85,14 +73,12 @@ async def chat_stream(request: ChatRequest):
                         full_reply += content
                         yield content
             
-            # Save the complete response to chat history after streaming is done
+            # Only save to history after streaming is complete
             chat_history[session_id].append({
                 "role": "assistant",
                 "content": full_reply
             })
 
-        # Return the streaming response with plain text media type
         return StreamingResponse(event_generator(), media_type="text/plain")
     except Exception as e:
-        # Handle any errors that occur during processing
         raise HTTPException(status_code=500, detail=str(e))

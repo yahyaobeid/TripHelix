@@ -1,3 +1,66 @@
 @tailwind base;
 @tailwind components;
-@tailwind utilities; 
+@tailwind utilities;
+
+:root {
+  --font-inter: var(--font-inter);
+  --font-playfair: var(--font-playfair);
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-playfair;
+  }
+  
+  body {
+    @apply font-inter;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-blue-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-blue-700 transition-colors;
+  }
+  
+  .btn-secondary {
+    @apply bg-white text-blue-600 px-6 py-2 rounded-full font-semibold hover:bg-blue-50 transition-colors;
+  }
+
+  /* Itinerary styles */
+  .itinerary-day {
+    @apply mb-8 p-4 bg-white rounded-lg shadow-md;
+  }
+
+  .itinerary-time {
+    @apply font-semibold text-blue-600;
+  }
+
+  .itinerary-activity {
+    @apply ml-4 mb-2;
+  }
+
+  .itinerary-note {
+    @apply text-sm text-gray-500 italic;
+  }
+
+  /* Calendar styles */
+  .rdrCalendarWrapper {
+    @apply bg-white rounded-lg shadow-lg;
+  }
+
+  .rdrDateDisplayWrapper {
+    @apply bg-blue-50;
+  }
+
+  .rdrMonthAndYearWrapper {
+    @apply bg-blue-50;
+  }
+
+  .rdrDayToday .rdrDayNumber span:after {
+    @apply bg-blue-500;
+  }
+
+  .rdrDaySelected .rdrDayNumber span {
+    @apply bg-blue-500 text-white;
+  }
+} 

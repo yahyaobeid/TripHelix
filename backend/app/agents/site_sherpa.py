@@ -48,31 +48,42 @@ class SiteSherpa(BaseAgent):
         )
         
         # Define the system prompt that guides the agent's behavior
-        system_prompt = """You are SiteSherpa, a friendly and knowledgeable travel assistant specializing in gathering 
-        information about users' travel preferences and requirements. Your goal is to:
-        1. Understand the user's travel needs and preferences
-        2. Gather necessary information about destinations, dates, and requirements
-        3. Ask relevant follow-up questions to ensure you have all needed information
-        4. Maintain a friendly and professional tone
-        5. Be thorough but concise in your questions
-        6. Generate a detailed itinerary based on collected information
-        7. Create a structured JSON schema for the next agent
-        
-        Required Information to Collect:
-        - Destination(s)
-        - Travel dates (start and end)
-        - Budget constraints
-        - Accommodation preferences
-        - Travel style (luxury, budget, adventure, etc.)
-        - Interests and activities
-        - Special requirements
-        - Group size
-        - Dietary restrictions
-        
-        Once all information is collected, generate:
-        1. A detailed day-by-day itinerary
-        2. A structured JSON schema for the next agent
-        """
+        system_prompt = system_prompt = """
+            You are **SiteSherpa**, a travel‑planning assistant whose SOLE purpose is to collect eight specific pieces of information and then produce an itinerary.  
+            Until all eight items are captured, you **MUST NOT** provide facts, tips, or commentary about destinations.
+
+            ╭─────────────────────────── CORE DIRECTIVES ───────────────────────────╮
+            │ 1.  **Interrogate, don’t inform.**                                   │
+            │     – Absolutely no destination facts, tips, or opinions.            │
+            │ 2.  **Follow the exact question order.** Ask only one question at a  │
+            │     time and proceed to the next item only after the user answers.    │
+            │ 3.  **Acknowledge answers with a single upbeat word** (“Great!”,      │
+            │     “Perfect!”, “Thanks!”). Nothing more.                            │
+            │ 4.  **If the user requests info before all data is gathered,** reply │
+            │     “I’ll gladly share details once we finish the checklist. [next    │
+            │     question].” Then keep going.                                      │
+            │ 5.  **Keep each reply under 20 words** (except the final itinerary).  │
+            ╰───────────────────────────────────────────────────────────────────────╯
+
+            🗒️ **Mandatory Question Sequence**
+            1. Destination?  
+            2. Travel dates?  
+            3. Travel style (luxury, budget, adventure…)?  
+            4. Accommodation preference?  
+            5. Interests / preferred activities?  
+            6. Group size?  
+            7. Special requirements or dietary needs?  
+            8. Budget range?  
+
+            ✅ **Only after capturing all eight answers**: generate a detailed itinerary that includes  
+            • Day‑by‑day plan (morning / afternoon / evening)  
+            • Suggested restaurants  
+            • Local transportation guidance  
+            • Estimated costs per item and total  
+            • Booking links/placeholders  
+            • Special notes or pro tips  
+            """
+
         
         # Initialize the base agent with the specialized prompt
         super().__init__(
@@ -82,6 +93,17 @@ class SiteSherpa(BaseAgent):
             name="SiteSherpa"
         )
         self.travel_preferences = None
+        self.conversation_state = {
+            "has_destination": False,
+            "has_dates": False,
+            "has_travel_style": False,
+            "has_accommodation": False,
+            "has_interests": False,
+            "has_group_size": False,
+            "has_special_requirements": False,
+            "has_budget": False,
+            "all_info_collected": False
+        }
         
     def _create_prompt(self) -> ChatPromptTemplate:
         """
@@ -117,7 +139,7 @@ class SiteSherpa(BaseAgent):
             return "Please provide all necessary travel information first."
             
         # Use the LLM to generate a detailed itinerary
-        itinerary_prompt = f"""Based on the following travel preferences, create a detailed day-by-day itinerary:
+        itinerary_prompt = f"""Based on the following travel preferences, create a detailed day-by-day itinerary in HTML format:
         Destination: {self.travel_preferences.destination}
         Dates: {self.travel_preferences.start_date} to {self.travel_preferences.end_date}
         Budget: ${self.travel_preferences.budget}
@@ -126,12 +148,25 @@ class SiteSherpa(BaseAgent):
         Group Size: {self.travel_preferences.group_size}
         Special Requirements: {', '.join(self.travel_preferences.special_requirements)}
         
-        Please provide a detailed day-by-day itinerary including:
+        Please provide a detailed day-by-day itinerary in HTML format with the following structure:
+        <div class="itinerary-day">
+          <h3>Day X: [Date]</h3>
+          <div class="itinerary-time">Morning</div>
+          <div class="itinerary-activity">[Activity]</div>
+          <div class="itinerary-time">Afternoon</div>
+          <div class="itinerary-activity">[Activity]</div>
+          <div class="itinerary-time">Evening</div>
+          <div class="itinerary-activity">[Activity]</div>
+          <div class="itinerary-note">[Notes/Recommendations]</div>
+        </div>
+        
+        Include:
         1. Daily activities and attractions
         2. Recommended restaurants
         3. Transportation options
         4. Estimated costs
         5. Time allocations
+        6. Booking links where applicable
         """
         
         return self.llm.predict(itinerary_prompt)
@@ -171,6 +206,19 @@ class SiteSherpa(BaseAgent):
             }
         }
         
+    def _update_conversation_state(self, message: str) -> None:
+        """Update the conversation state based on the user's message"""
+        if not self.conversation_state["has_destination"]:
+            # Check if the message contains a destination
+            if any(keyword in message.lower() for keyword in ["paris", "london", "tokyo", "new york", "rome", "barcelona"]):
+                self.conversation_state["has_destination"] = True
+        elif not self.conversation_state["has_dates"]:
+            # Check if the message contains dates
+            if any(keyword in message.lower() for keyword in ["january", "february", "march", "april", "may", "june", 
+                                                           "july", "august", "september", "october", "november", "december"]):
+                self.conversation_state["has_dates"] = True
+        # Add more state checks as needed
+        
     async def process_message(
         self,
         message: str,
@@ -186,13 +234,17 @@ class SiteSherpa(BaseAgent):
         Returns:
             The agent's response as a string
         """
+        # Update conversation state based on the message
+        self._update_conversation_state(message)
+        
         # Create a new agent instance for this interaction
         agent = self._create_agent()
         
         # Process the message with the agent
         response = await agent.ainvoke({
             "input": message,
-            "chat_history": self.memory
+            "chat_history": self.memory,
+            "conversation_state": self.conversation_state
         })
         
         # Store the interaction in memory
@@ -200,13 +252,12 @@ class SiteSherpa(BaseAgent):
         self.add_to_memory("assistant", response["output"])
         
         # Check if we have all necessary information
-        if "all information collected" in response["output"].lower():
-            # Generate itinerary and booking schema
+        if all(self.conversation_state.values()):
+            # Generate itinerary
             itinerary = self._generate_itinerary()
-            booking_schema = self._generate_booking_schema()
             
-            # Combine the response with itinerary and schema
-            final_response = f"{response['output']}\n\nHere's your detailed itinerary:\n{itinerary}\n\nBooking schema has been prepared for the next agent."
+            # Combine the response with itinerary
+            final_response = f"{response['output']}\n\nHere's your detailed itinerary:\n{itinerary}\n\nWould you like to save this itinerary or make any adjustments?"
             return final_response
             
         return response["output"]
