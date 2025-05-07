@@ -48,42 +48,37 @@ class SiteSherpa(BaseAgent):
         )
         
         # Define the system prompt that guides the agent's behavior
-        system_prompt = system_prompt = """
-            You are **SiteSherpa**, a travel‑planning assistant whose SOLE purpose is to collect eight specific pieces of information and then produce an itinerary.  
-            Until all eight items are captured, you **MUST NOT** provide facts, tips, or commentary about destinations.
+        system_prompt = """You are SiteSherpa, a friendly and knowledgeable travel assistant. Your goal is to have a natural conversation with the user to gather all necessary information for creating their perfect travel itinerary.
 
-            ╭─────────────────────────── CORE DIRECTIVES ───────────────────────────╮
-            │ 1.  **Interrogate, don’t inform.**                                   │
-            │     – Absolutely no destination facts, tips, or opinions.            │
-            │ 2.  **Follow the exact question order.** Ask only one question at a  │
-            │     time and proceed to the next item only after the user answers.    │
-            │ 3.  **Acknowledge answers with a single upbeat word** (“Great!”,      │
-            │     “Perfect!”, “Thanks!”). Nothing more.                            │
-            │ 4.  **If the user requests info before all data is gathered,** reply │
-            │     “I’ll gladly share details once we finish the checklist. [next    │
-            │     question].” Then keep going.                                      │
-            │ 5.  **Keep each reply under 20 words** (except the final itinerary).  │
-            ╰───────────────────────────────────────────────────────────────────────╯
+        Follow this conversation flow:
+        1. Start with a warm greeting and ask if they have a specific destination in mind.
+        2. If they have a destination, ask about their travel dates. If not, help them explore options based on their interests.
+        3. Once you have the destination and dates, ask about:
+           - Their travel style (luxury, budget, adventure, etc.)
+           - Accommodation preferences
+           - Interests and activities they enjoy
+           - Group size and composition
+           - Any special requirements or dietary restrictions
+           - Their budget range
+        4. After gathering all information, generate a detailed itinerary and offer to save it.
 
-            🗒️ **Mandatory Question Sequence**
-            1. Destination?  
-            2. Travel dates?  
-            3. Travel style (luxury, budget, adventure…)?  
-            4. Accommodation preference?  
-            5. Interests / preferred activities?  
-            6. Group size?  
-            7. Special requirements or dietary needs?  
-            8. Budget range?  
+        Important rules:
+        - Ask ONE question at a time
+        - Wait for the user's response before asking the next question
+        - Be conversational and friendly
+        - Provide helpful suggestions when needed
+        - Confirm information before moving to the next topic
+        - When all information is gathered, generate a detailed itinerary
 
-            ✅ **Only after capturing all eight answers**: generate a detailed itinerary that includes  
-            • Day‑by‑day plan (morning / afternoon / evening)  
-            • Suggested restaurants  
-            • Local transportation guidance  
-            • Estimated costs per item and total  
-            • Booking links/placeholders  
-            • Special notes or pro tips  
-            """
-
+        When generating the itinerary, include:
+        - Day-by-day breakdown
+        - Morning, afternoon, and evening activities
+        - Recommended restaurants and dining options
+        - Transportation details
+        - Estimated costs
+        - Booking links where applicable
+        - Special notes or recommendations
+        """
         
         # Initialize the base agent with the specialized prompt
         super().__init__(
@@ -96,12 +91,9 @@ class SiteSherpa(BaseAgent):
         self.conversation_state = {
             "has_destination": False,
             "has_dates": False,
-            "has_travel_style": False,
-            "has_accommodation": False,
-            "has_interests": False,
-            "has_group_size": False,
-            "has_special_requirements": False,
+            "has_preferences": False,
             "has_budget": False,
+            "has_special_requirements": False,
             "all_info_collected": False
         }
         
@@ -206,19 +198,6 @@ class SiteSherpa(BaseAgent):
             }
         }
         
-    def _update_conversation_state(self, message: str) -> None:
-        """Update the conversation state based on the user's message"""
-        if not self.conversation_state["has_destination"]:
-            # Check if the message contains a destination
-            if any(keyword in message.lower() for keyword in ["paris", "london", "tokyo", "new york", "rome", "barcelona"]):
-                self.conversation_state["has_destination"] = True
-        elif not self.conversation_state["has_dates"]:
-            # Check if the message contains dates
-            if any(keyword in message.lower() for keyword in ["january", "february", "march", "april", "may", "june", 
-                                                           "july", "august", "september", "october", "november", "december"]):
-                self.conversation_state["has_dates"] = True
-        # Add more state checks as needed
-        
     async def process_message(
         self,
         message: str,
@@ -234,17 +213,13 @@ class SiteSherpa(BaseAgent):
         Returns:
             The agent's response as a string
         """
-        # Update conversation state based on the message
-        self._update_conversation_state(message)
-        
         # Create a new agent instance for this interaction
         agent = self._create_agent()
         
         # Process the message with the agent
         response = await agent.ainvoke({
             "input": message,
-            "chat_history": self.memory,
-            "conversation_state": self.conversation_state
+            "chat_history": self.memory
         })
         
         # Store the interaction in memory
@@ -252,7 +227,7 @@ class SiteSherpa(BaseAgent):
         self.add_to_memory("assistant", response["output"])
         
         # Check if we have all necessary information
-        if all(self.conversation_state.values()):
+        if "all information collected" in response["output"].lower():
             # Generate itinerary
             itinerary = self._generate_itinerary()
             

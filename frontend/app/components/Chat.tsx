@@ -1,70 +1,103 @@
 /**
  * Chat component for the TripHelix application.
- * This component provides a chat interface that communicates with the backend API
- * and displays messages in a streaming fashion.
+ * Streams messages from the backend and renders ASSISTANT replies as HTML.
  */
 
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
 import { Calendar } from 'react-date-range';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
-// Define the Message interface for type safety
+/* ────────────────────  types ──────────────────── */
+// Configure marked options
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
+
 interface Message {
-  role: 'user' | 'assistant';  // The role of the message sender
-  content: string;             // The content of the message
-  type?: 'text' | 'calendar' | 'itinerary';  // Type of message content
-  data?: any;                  // Additional data for special message types
+  role: 'user' | 'assistant';
+  content: string;
+  type?: 'text' | 'calendar' | 'html';
+  data?: any;
 }
 
-export default function Chat() {
-  // State management for messages, input, and loading state
-  const [messages, setMessages] = useState<Message[]>([]);  // Array of chat messages
-  const [input, setInput] = useState('');                   // Current input value
-  const [isLoading, setIsLoading] = useState(false);        // Loading state indicator
-  const [showCalendar, setShowCalendar] = useState(false);  // Calendar visibility
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);  // Selected date
-  const [currentItinerary, setCurrentItinerary] = useState<string | null>(null);  // Current itinerary
-  const messagesEndRef = useRef<HTMLDivElement>(null);      // Reference to the end of messages container
-  const hasInitialized = useRef(false);                     // Track if initial message has been sent
+interface Location {
+  lat: number;
+  lng: number;
+  name: string;
+}
 
-  // Auto-scroll to the bottom when new messages are added
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  itinerary: string | null;
+}
 
-  // Send initial message when component mounts
-  useEffect(() => {
-    if (!hasInitialized.current) {
-      hasInitialized.current = true;
-      // Add the initial assistant message
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: "Hello! I'm your personal travel assistant. I'd love to help you plan your next adventure. Do you have a specific destination in mind for your trip?",
-        type: 'text'
-      }]);
-    }
-  }, []);
-
-  // Handle date selection from calendar
-  const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-    setShowCalendar(false);
-    // Send the selected date to the backend
-    handleSubmit(new Event('submit') as any, date.toISOString());
-  };
-
-  // Handle itinerary download
+const Modal = ({ isOpen, onClose, children, itinerary }: ModalProps) => {
   const handleDownloadItinerary = () => {
-    if (!currentItinerary) return;
+    if (!itinerary) return;
     
-    // Create a blob with the itinerary content
-    const blob = new Blob([currentItinerary], { type: 'text/html' });
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Trip Itinerary</title>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
+            .itinerary-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+              font-size: 14px;
+            }
+            .itinerary-table th,
+            .itinerary-table td {
+              border: 1px solid #ddd;
+              padding: 12px;
+              vertical-align: top;
+            }
+            .itinerary-table th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+              text-align: left;
+            }
+            .itinerary-table tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .itinerary-table strong {
+              color: #2c3e50;
+              display: block;
+              margin-bottom: 8px;
+              font-size: 16px;
+            }
+            .itinerary-table ul {
+              margin: 0;
+              padding-left: 20px;
+            }
+            .itinerary-table li {
+              margin: 4px 0;
+            }
+            .itinerary-table td {
+              min-width: 200px;
+            }
+          </style>
+        </head>
+        <body>
+          ${itinerary}
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
-    
-    // Create a temporary link and trigger download
+
     const link = document.createElement('a');
     link.href = url;
     link.download = 'trip-itinerary.html';
@@ -74,46 +107,161 @@ export default function Chat() {
     URL.revokeObjectURL(url);
   };
 
-  /**
-   * Handles the submission of a new message.
-   * Sends the message to the backend API and processes the streaming response.
-   */
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 w-full max-w-6xl h-[90vh] flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-gray-800">Your Itinerary</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <style>
+            {`
+              .itinerary-container {
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+              }
+              .itinerary-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-size: 14px;
+              }
+              .itinerary-table th,
+              .itinerary-table td {
+                border: 1px solid #ddd;
+                padding: 12px;
+                vertical-align: top;
+              }
+              .itinerary-table th {
+                background-color: #f5f5f5;
+                font-weight: bold;
+                text-align: left;
+                position: sticky;
+                top: 0;
+                z-index: 1;
+              }
+              .itinerary-table tr:nth-child(even) {
+                background-color: #f9f9f9;
+              }
+              .itinerary-table strong {
+                color: #2c3e50;
+                display: block;
+                margin-bottom: 8px;
+                font-size: 16px;
+              }
+              .itinerary-table ul {
+                margin: 0;
+                padding-left: 20px;
+              }
+              .itinerary-table li {
+                margin: 4px 0;
+              }
+              .itinerary-table td {
+                min-width: 200px;
+              }
+            `}
+          </style>
+          {children}
+        </div>
+        <div className="mt-4 flex justify-end border-t pt-4">
+          <button
+            onClick={handleDownloadItinerary}
+            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+          >
+            Download Itinerary
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ────────────────────  component ──────────────────── */
+
+export default function Chat() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [currentItinerary, setCurrentItinerary] = useState<string | null>(null);
+  const [showItinerary, setShowItinerary] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasInitialized = useRef(false);
+
+  /* ───────────────── auto‑scroll ───────────────── */
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  /* ─────────────── initial assistant msg ────────── */
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content:
+            "Hello! I'm your personal travel assistant. Do you have a specific destination in mind?",
+          type: 'text',
+        },
+      ]);
+    }
+  }, []);
+
+  /* ─────────────── date selection ──────────────── */
+  const handleDateSelect = (date: Date) => {
+    setSelectedDate(date);
+    handleSubmit(new Event('submit') as any, date.toISOString());
+  };
+
+  /* ─────────────── send a message ──────────────── */
   const handleSubmit = async (e: React.FormEvent, date?: string) => {
     e.preventDefault();
     const messageToSend = date || input.trim();
     if (!messageToSend || isLoading) return;
 
-    // Add the user's message to the chat
-    setMessages(prev => [...prev, { 
-      role: 'user', 
-      content: messageToSend,
-      type: date ? 'calendar' : 'text'
-    }]);
+    /* add user bubble */
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'user',
+        content: messageToSend,
+        type: date ? 'calendar' : 'text',
+      },
+    ]);
     setInput('');
     setIsLoading(true);
 
     try {
-      // Make a POST request to the chat stream endpoint
       const res = await fetch('http://localhost:8000/api/v1/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: messageToSend, 
-          session_id: 'test_session' 
+        body: JSON.stringify({
+          message: messageToSend,
+          session_id: 'test_session',
         }),
       });
       if (!res.body) throw new Error('No response body');
 
-      // Set up streaming response handling
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
       let fullResponse = '';
 
-      // Add a placeholder for the assistant's response
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      /* placeholder assistant bubble */
+      setMessages(prev => [...prev, { role: 'assistant', content: '', type: 'text' }]);
 
-      // Process the stream chunk by chunk
       while (!done) {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
@@ -121,21 +269,12 @@ export default function Chat() {
           const chunk = decoder.decode(value);
           if (chunk) {
             fullResponse += chunk;
-            // Update the last assistant message with the new chunk
+            /* show raw text while streaming */
             setMessages(prev => {
               const copy = [...prev];
               const last = { ...copy.at(-1)! };
               if (last.role === 'assistant') {
                 last.content = fullResponse;
-                // Check if the response contains calendar request
-                if (fullResponse.toLowerCase().includes('select a date')) {
-                  last.type = 'calendar';
-                }
-                // Check if the response contains itinerary
-                else if (fullResponse.toLowerCase().includes('itinerary')) {
-                  last.type = 'itinerary';
-                  setCurrentItinerary(fullResponse);
-                }
                 copy[copy.length - 1] = last;
               }
               return copy;
@@ -143,58 +282,142 @@ export default function Chat() {
           }
         }
       }
+
+      /* ───────── after the stream finishes ───────── */
+
+      let md = fullResponse.trim()
+
+      /* 1️⃣  ensure a newline before any heading symbols (##, ###, etc.)        */
+      .replace(/([^\n])(\s*#+\s)/g, '$1\n\n$2')
+
+      /* 2️⃣  ensure a newline before any bullet that's glued to a word          */
+      .replace(/([^\n])(\s*-\s)/g, '$1\n$2')
+
+      /* 3️⃣  turn **all** Markdown headings (#, ##, ### …) into bold lines      */
+      .replace(/^#+\s*(.*)$/gm, '**$1**')
+
+      /* 4️⃣  add blank line after each "Day N:" header */
+      .replace(/^\*Day\s*\d+.*\*/gm, match => `${match}\n`)
+
+      /* 5️⃣  add blank line after each time-of-day header */
+      .replace(/^\*(Morning|Afternoon|Evening)/gm, match => `${match}\n`)
+
+      /* 6️⃣  remove exactly 3 consecutive newlines              */
+      .replace(/\n{3}/g, '\n\n')
+
+      /* 7️⃣  ensure only one newline after bullet points */
+      .replace(/(\n\s*-\s*.*)\n+/g, '$1\n');
+
+      // Convert to safe HTML
+      const rawHtml = await marked.parse(md);
+      const html = DOMPurify.sanitize(rawHtml);
+
+      // Convert the HTML to a table format
+      const tableHtml = html.replace(
+        /<strong>Day\s*(\d+):\s*(.*?)<\/strong>([\s\S]*?)(?=<strong>Day\s*\d+:|$)/g,
+        (match, dayNum, date, content) => {
+          const morning = content.match(/<strong>Morning<\/strong>([\s\S]*?)(?=<strong>Afternoon|Evening|$)/)?.[1] || '';
+          const afternoon = content.match(/<strong>Afternoon<\/strong>([\s\S]*?)(?=<strong>Evening|$)/)?.[1] || '';
+          const evening = content.match(/<strong>Evening<\/strong>([\s\S]*?)$/)?.[1] || '';
+
+          return `
+            <tr>
+              <td><strong>Day ${dayNum}: ${date}</strong></td>
+              <td><strong>Morning</strong>${morning}</td>
+              <td><strong>Afternoon</strong>${afternoon}</td>
+              <td><strong>Evening</strong>${evening}</td>
+            </tr>
+          `;
+        }
+      );
+
+      const finalHtml = `
+        <table class="itinerary-table">
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Morning</th>
+              <th>Afternoon</th>
+              <th>Evening</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableHtml}
+          </tbody>
+        </table>
+      `;
+
+      setMessages(prev => {
+        const copy = [...prev];
+        const last = { ...copy.at(-1)! };
+        last.content = finalHtml;
+        last.type = 'html';
+        copy[copy.length - 1] = last;
+        return copy;
+      });
+
+      /* save itinerary for download btn */
+      if (html.toLowerCase().includes('itinerary')) {
+        setCurrentItinerary(finalHtml);
+        setShowItinerary(true);
+      }
     } catch (err) {
       console.error(err);
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: '❌ Sorry, something went wrong.' }
+        { role: 'assistant', content: '❌ Sorry, something went wrong.', type: 'text' },
       ]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Render the chat interface
+  /* ──────────────────── render ─────────────────── */
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto p-4">
-      {/* Messages container with auto-scrolling */}
       <div className="flex-1 overflow-y-auto mb-4 space-y-4">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`p-4 rounded-lg ${
+            className={`p-4 rounded-lg max-w-[80%] ${
               m.role === 'user'
                 ? 'bg-blue-500 text-white ml-auto'
-                : 'bg-gray-200 text-gray-800'
-            } max-w-[80%]`}
+                : 'bg-gray-100 text-gray-800'
+            }`}
           >
             {m.type === 'calendar' ? (
-              <div className="text-center">
-                <Calendar
-                  date={selectedDate || new Date()}
-                  onChange={handleDateSelect}
-                  className="border rounded-lg shadow-lg"
-                />
-              </div>
-            ) : m.type === 'itinerary' ? (
-              <div>
-                <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: m.content }} />
-                <button
-                  onClick={handleDownloadItinerary}
-                  className="mt-4 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                >
-                  Download Itinerary
-                </button>
-              </div>
+              <Calendar
+                date={selectedDate || new Date()}
+                onChange={handleDateSelect}
+                className="border rounded-lg shadow-lg"
+              />
+            ) : m.type === 'html' ? (
+              <div
+                className="prose prose-slate max-w-none whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{ __html: m.content }}
+              />
             ) : (
-              m.content
+              <div
+                className="prose prose-slate max-w-none whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(marked.parse(m.content) as string),
+                }}
+              />
+            )}
+
+            {m.type === 'html' && i === messages.length - 1 && currentItinerary && (
+              <button
+                onClick={() => setShowItinerary(true)}
+                className="mt-4 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              >
+                View Itinerary
+              </button>
             )}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message input form */}
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           className="flex-1 p-2 border rounded-lg"
@@ -211,6 +434,16 @@ export default function Chat() {
           {isLoading ? 'Sending…' : 'Send'}
         </button>
       </form>
+
+      <Modal 
+        isOpen={showItinerary} 
+        onClose={() => setShowItinerary(false)}
+        itinerary={currentItinerary}
+      >
+        <div className="itinerary-container">
+          <div dangerouslySetInnerHTML={{ __html: currentItinerary || '' }} />
+        </div>
+      </Modal>
     </div>
   );
 }
