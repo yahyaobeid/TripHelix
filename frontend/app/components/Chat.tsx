@@ -38,11 +38,41 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   itinerary: string | null;
+  onItineraryUpdate?: (newItinerary: string) => void;
 }
 
-const Modal = ({ isOpen, onClose, children, itinerary }: ModalProps) => {
+const Modal = ({ isOpen, onClose, children, itinerary, onItineraryUpdate }: ModalProps) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (itinerary) {
+      setEditedContent(itinerary);
+    }
+  }, [itinerary]);
+
+  const handleEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleSave = () => {
+    if (editedContent && onItineraryUpdate) {
+      onItineraryUpdate(editedContent);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditedContent(itinerary);
+    setIsEditing(false);
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLDivElement>) => {
+    setEditedContent(e.currentTarget.innerHTML);
+  };
+
   const handleDownloadItinerary = () => {
-    if (!itinerary) return;
+    if (!editedContent) return;
     
     const htmlContent = `
       <!DOCTYPE html>
@@ -90,7 +120,7 @@ const Modal = ({ isOpen, onClose, children, itinerary }: ModalProps) => {
           </style>
         </head>
         <body>
-          ${itinerary}
+          ${editedContent}
         </body>
       </html>
     `;
@@ -114,14 +144,39 @@ const Modal = ({ isOpen, onClose, children, itinerary }: ModalProps) => {
       <div className="bg-white rounded-lg p-6 w-full max-w-6xl h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-gray-800">Your Itinerary</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {!isEditing ? (
+              <button
+                onClick={handleEdit}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Edit Itinerary
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                >
+                  Save Changes
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           <style>
@@ -169,9 +224,22 @@ const Modal = ({ isOpen, onClose, children, itinerary }: ModalProps) => {
               .itinerary-table td {
                 min-width: 200px;
               }
+              .editable {
+                outline: 2px solid #3b82f6;
+                outline-offset: -2px;
+              }
+              .editable:focus {
+                outline: 2px solid #2563eb;
+              }
             `}
           </style>
-          {children}
+          <div 
+            className="itinerary-container"
+            contentEditable={isEditing}
+            onBlur={handleContentChange}
+            suppressContentEditableWarning
+            dangerouslySetInnerHTML={{ __html: editedContent || '' }}
+          />
         </div>
         <div className="mt-4 flex justify-end border-t pt-4">
           <button
@@ -372,6 +440,10 @@ export default function Chat() {
     }
   };
 
+  const handleItineraryUpdate = (newItinerary: string) => {
+    setCurrentItinerary(newItinerary);
+  };
+
   /* ──────────────────── render ─────────────────── */
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto p-4">
@@ -439,6 +511,7 @@ export default function Chat() {
         isOpen={showItinerary} 
         onClose={() => setShowItinerary(false)}
         itinerary={currentItinerary}
+        onItineraryUpdate={handleItineraryUpdate}
       >
         <div className="itinerary-container">
           <div dangerouslySetInnerHTML={{ __html: currentItinerary || '' }} />
